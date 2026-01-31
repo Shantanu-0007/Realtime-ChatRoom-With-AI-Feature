@@ -1,16 +1,57 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { FaSearch, FaCog } from "react-icons/fa";
+import SettingsModal from "./SettingsModal";
+import SearchUsers from "../components/SearchUsers";
+// import FollowRequests from "../components/FollowRequests";
+import { chatMutualConnections } from "../functions/chatMutualConnection";
+import { auth } from "../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 function Groups({ onSelectRoom }) {
   const rooms = ["Notice", "Projects", "Random"];
-  const privateChats = ["Leader", "Members"];
-
-  // Track hovered button
+  //const privateChats = ["Leader", "Members"];
+  const [mutuals, setMutuals] = useState([]);
   const [hovered, setHovered] = useState(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+  const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    if (!user) return;
+
+    chatMutualConnections(user.uid, setMutuals);
+  });
+
+  return () => unsubscribeAuth();
+  }, []);
+
 
   return (
     <div style={styles.pageContainer}>
       <div style={styles.container}>
-        <h2 style={styles.heading}>💬 Available Chatrooms</h2>
+
+        {/* Header */}
+        <div style={styles.header}>
+          {/* LEFT: Settings */}
+          <FaCog
+            style={styles.settingsIcon}
+            title="Settings"
+            onClick={() => setShowSettings(true)}
+          />
+          {/* <FollowRequests /> */}
+
+          {/* CENTER: Title */}
+          <h2 style={styles.heading}>💬 Chatrooms</h2>
+
+          {/* RIGHT: Search */}
+          <FaSearch
+            style={styles.searchIcon}
+            title="Search users"
+            onClick={() => setShowSearch(true)}
+          />
+        </div>
+
+        {/* Public Rooms */}
         <ul style={styles.list}>
           {rooms.map((room, index) => (
             <li key={index} style={styles.listItem}>
@@ -29,8 +70,55 @@ function Groups({ onSelectRoom }) {
           ))}
         </ul>
 
+        {/* Private Chats */}
         <h3 style={styles.subHeading}>🔒 Private Chats</h3>
-        <ul style={styles.list}>
+
+        {mutuals.length === 0 && (
+        <p style={{ opacity: 0.6, textAlign: "center" }}>
+           No private chats yet
+        </p>
+        )}
+
+        {mutuals.map((u) => (
+        <div
+          key={u.id}
+          style={styles.privateChatRow}
+          onClick={() =>
+          onSelectRoom({
+          type: "private",
+          userId: u.id,
+          name: u.username || u.email,
+          })
+          }
+        >
+        {/* LEFT */}
+        <div style={styles.privateLeft}>
+            <div style={styles.privateAvatar}>
+              {(u.username || u.email)
+              ?.charAt(0)
+              .toUpperCase()}
+        </div>
+
+        <div>
+          <div style={styles.privateName}>
+            {u.username || u.email}
+          </div>
+          <div style={styles.privateSub}>
+            Tap to chat
+          </div>
+          </div>
+        </div>
+
+        {/* RIGHT – UNREAD COUNT */}
+        {u.unreadCount > 0 && (
+          <div style={styles.unreadBadge}>
+            {u.unreadCount}
+          </div>
+          )}
+          </div>
+        ))}
+
+        {/* <ul style={styles.list}>
           {privateChats.map((chat, index) => (
             <li key={index} style={styles.listItem}>
               <button
@@ -46,7 +134,18 @@ function Groups({ onSelectRoom }) {
               </button>
             </li>
           ))}
-        </ul>
+        </ul> */}
+
+        {/* 🔍 Search Modal */}
+        {showSearch && (
+          <SearchUsers onClose={() => setShowSearch(false)} />
+        )}
+
+        {/* ⚙️ Settings Modal */}
+        {showSettings && (
+          <SettingsModal onClose={() => setShowSettings(false)} />
+        )}
+
       </div>
     </div>
   );
@@ -71,19 +170,35 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "20px",
+    position: "relative",
+  },
+
+  /* Header */
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   heading: {
-    marginBottom: "10px",
+    fontSize: "20px",
     textAlign: "center",
-    fontSize: "22px",
-    textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
+    flex: 1,
   },
+  settingsIcon: {
+    cursor: "pointer",
+    fontSize: "18px",
+  },
+  searchIcon: {
+    cursor: "pointer",
+    fontSize: "18px",
+  },
+
+  /* Lists */
   subHeading: {
     marginTop: "20px",
     marginBottom: "10px",
     fontSize: "18px",
     textAlign: "center",
-    textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
   },
   list: {
     listStyle: "none",
@@ -106,13 +221,66 @@ const styles = {
     fontWeight: "bold",
     cursor: "pointer",
     transition: "all 0.3s ease",
-    boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
   },
   buttonHover: {
     backgroundColor: "rgba(255, 255, 255, 0.3)",
     transform: "scale(1.05)",
-    boxShadow: "0 6px 12px rgba(0,0,0,0.3)",
   },
+  privateChatRow: {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: "12px",
+  borderRadius: "14px",
+  background: "rgba(255,255,255,0.18)",
+  marginBottom: "10px",
+  cursor: "pointer",
+  transition: "transform 0.2s ease, background 0.2s ease",
+},
+
+  privateLeft: {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  },
+
+  privateAvatar: {
+  width: "40px",
+  height: "40px",
+  borderRadius: "50%",
+  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: "bold",
+  color: "white",
+  },
+
+  privateName: {
+  fontWeight: "600",
+  color: "white",
+  fontSize: "14px",
+  },
+
+  privateSub: {
+  fontSize: "12px",
+  opacity: 0.7,
+  color: "white",
+  },
+
+  unreadBadge: {
+  minWidth: "22px",
+  height: "22px",
+  borderRadius: "50%",
+  background: "#ef4444",
+  color: "white",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "12px",
+  fontWeight: "bold",
+  },
+
 };
 
 export default Groups;
