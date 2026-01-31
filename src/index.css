@@ -11,3 +11,35 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+/*Private Chat Scrollbar*/
+.private-chat-scroll {
+  max-height: 150px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.private-chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.private-chat-scroll::-webkit-scrollbar-track {
+  background: transparent; /* blends with background */
+}
+
+.private-chat-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(255,255,255,0.35),
+    rgba(255,255,255,0.15)
+  );
+  border-radius: 10px;
+}
+
+.private-chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.5);
+}
+
+.private-chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.4) transparent;
+}
