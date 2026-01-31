@@ -73,51 +73,47 @@ function Groups({ onSelectRoom }) {
         {/* Private Chats */}
         <h3 style={styles.subHeading}>🔒 Private Chats</h3>
 
-        {mutuals.length === 0 && (
-        <p style={{ opacity: 0.6, textAlign: "center" }}>
-           No private chats yet
-        </p>
-        )}
-      <div style={styles.privateChatList}>
-        {mutuals.map((u) => (
-        <div
-          key={u.id}
-          style={styles.privateChatRow}
-          onClick={() =>
-          onSelectRoom({
+<div className="private-chat-scroll">
+  {mutuals.length === 0 && (
+    <p style={{ opacity: 0.6, textAlign: "center" }}>
+      No private chats yet
+    </p>
+  )}
+
+  {mutuals.map((u) => (
+    <div
+      key={u.id}
+      style={styles.privateChatRow}
+      onClick={() =>
+        onSelectRoom({
           type: "private",
           userId: u.id,
           name: u.username || u.email,
-          })
-          }
-        >
-        {/* LEFT */}
-        <div style={styles.privateLeft}>
-            <div style={styles.privateAvatar}>
-              {(u.username || u.email)
-              ?.charAt(0)
-              .toUpperCase()}
+        })
+      }
+    >
+      {/* LEFT */}
+      <div style={styles.privateLeft}>
+        <div style={styles.privateAvatar}>
+          {(u.username || u.email)?.charAt(0).toUpperCase()}
         </div>
 
         <div>
           <div style={styles.privateName}>
             {u.username || u.email}
           </div>
-          <div style={styles.privateSub}>
-            Tap to chat
-          </div>
-          </div>
+          <div style={styles.privateSub}>{u.lastMessage || "Tap to chat"}</div>
         </div>
-
-        {/* RIGHT – UNREAD COUNT */}
-        {u.unreadCount > 0 && (
-          <div style={styles.unreadBadge}>
-            {u.unreadCount}
-          </div>
-          )}
-          </div>
-        ))}
       </div>
+
+      {/* RIGHT */}
+      {u.unreadCount > 0 && (
+        <div style={styles.unreadBadge}>{u.unreadCount}</div>
+      )}
+    </div>
+  ))}
+</div>
+
         {/* <ul style={styles.list}>
           {privateChats.map((chat, index) => (
             <li key={index} style={styles.listItem}>
@@ -163,6 +159,7 @@ const styles = {
   container: {
     padding: "30px",
     width: "300px",
+    height: "500px",
     background: "linear-gradient(145deg, #667eea, #764ba2)",
     borderRadius: "20px",
     boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
@@ -212,9 +209,13 @@ const styles = {
     justifyContent: "center",
   },
   privateChatList: {
-  maxHeight: "240px",
+  maxHeight: "150px",
   overflowY: "auto",
   scrollbarWidth: "thin",
+  position: "sticky",
+  backdropFilter: "blur(6px)",
+  transition: "background 0.2s ease, transform 0.2s ease",
+  top: 0,
   },
   button: {
     width: "100%",
