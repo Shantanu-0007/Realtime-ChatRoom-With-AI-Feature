@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo} from "react";
 import { db } from "../firebase";
 import {
   collection,
@@ -6,46 +6,113 @@ import {
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp
+  serverTimestamp,
+  getDocs,
+  updateDoc,
+  arrayUnion,
+  doc,
 } from "firebase/firestore";
 
 function Chatroom({ user, room, onBack }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [usersMap, setUsersMap] = useState({});
   const chatEndRef = useRef(null);
 
-  // Load messages realtime from Firestore
+  const isPrivate = typeof room === "object" && room.type === "private";
+
+  const roomId = useMemo(() => {
+  return isPrivate
+    ? [user.uid, room.userId].sort().join("_")
+    : room;
+  }, [isPrivate, room, user.uid]);
+
+
+  const title = isPrivate
+    ? `Private Chat with ${room.name}`
+    : `${room} Room`;
+
+  
+
+  // 🔹 Load users
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const snap = await getDocs(collection(db, "users"));
+      const map = {};
+      snap.forEach((d) => (map[d.id] = d.data()));
+      setUsersMap(map);
+    };
+    fetchUsers();
+  }, []);
+
+  // 🔹 Listen for messages
   useEffect(() => {
     const q = query(
-      collection(db, "rooms", room, "messages"),
+      collection(db, "chats", roomId, "messages"),
       orderBy("timestamp", "asc")
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMessages(loaded);
+      setMessages(
+        snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      );
+      snapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (
+        data.senderId !== user.uid &&
+        (!data.readBy || !data.readBy.includes(user.uid))
+      ) {
+        updateDoc(docSnap.ref, {
+          readBy: arrayUnion(user.uid),
+        });
+      }
+    });
     });
 
     return () => unsubscribe();
-  }, [room]);
+  }, [roomId, user.uid]);
 
-  // Send message to Firestore
+  // 🔹 MARK MESSAGES AS READ
+  useEffect(() => {
+    messages.forEach(async (msg) => {
+      if (!msg.readBy || !msg.readBy.includes(user.uid)) {
+        await updateDoc(
+          doc(db, "chats", roomId, "messages", msg.id),
+          {
+            readBy: arrayUnion(user.uid),
+          }
+        );
+      }
+    });
+  }, [messages, roomId, user.uid]);
+
+  //last read timestamp
+  useEffect(() => {
+  if (!user || !roomId || !isPrivate) return;
+
+  updateDoc(doc(db, "users", user.uid), {
+    [`lastRead.${roomId}`]: serverTimestamp(),
+  });
+  }, [roomId, user, isPrivate]);
+
+
+  // 🔹 Send message
   const sendMessage = async () => {
-    if (input.trim() === "") return;
+    if (!input.trim()) return;
 
-    await addDoc(collection(db, "rooms", room, "messages"), {
-      sender: user,
+    await addDoc(collection(db, "chats", roomId, "messages"), {
       text: input,
+      senderId: user.uid,
       timestamp: serverTimestamp(),
+      readBy: [user.uid], // ✅ IMPORTANT
     });
 
     setInput("");
   };
 
-  // Auto-scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -53,27 +120,40 @@ function Chatroom({ user, room, onBack }) {
   return (
     <div style={styles.container}>
       <div style={styles.chatCard}>
-        
-        {/* Back Button */}
-        <button style={styles.backButton} onClick={onBack}>⬅ Back</button>
-        
-        <h2 style={styles.title}>💬 {room} Room</h2>
+        <button style={styles.backButton} onClick={onBack}>
+          ⬅ Back
+        </button>
+
+        <h2 style={styles.title}>💬 {title}</h2>
 
         <div style={styles.chatBox}>
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                ...styles.message,
-                alignSelf: msg.sender === user ? "flex-end" : "flex-start",
-                backgroundColor: msg.sender === user ? "#6366f1" : "#e5e7eb",
-                color: msg.sender === user ? "white" : "#111827",
-              }}
-            >
-              <b>{msg.sender}:</b> {msg.text}
-            </div>
-          ))}
-          <div ref={chatEndRef}></div>
+          {messages.map((msg) => {
+            const sender = usersMap[msg.senderId];
+
+            return (
+              <div
+                key={msg.id}
+                style={{
+                  ...styles.message,
+                  alignSelf:
+                    msg.senderId === user.uid ? "flex-end" : "flex-start",
+                  backgroundColor:
+                    msg.senderId === user.uid ? "#6366f1" : "#e5e7eb",
+                  color:
+                    msg.senderId === user.uid ? "white" : "#111827",
+                }}
+              >
+                <b>
+                  {msg.senderId === user.uid
+                    ? "You"
+                    : sender?.username || sender?.email || "Unknown"}
+                  :
+                </b>{" "}
+                {msg.text}
+              </div>
+            );
+          })}
+          <div ref={chatEndRef} />
         </div>
 
         <div style={styles.inputContainer}>
@@ -83,15 +163,17 @@ function Chatroom({ user, room, onBack }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             style={styles.input}
-            onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           />
-          <button onClick={sendMessage} style={styles.button}>Send</button>
+          <button onClick={sendMessage} style={styles.button}>
+            Send
+          </button>
         </div>
-
       </div>
     </div>
   );
 }
+
 
 const styles = {
   container: {
