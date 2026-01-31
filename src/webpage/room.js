@@ -8,6 +8,7 @@ import {
   query,
   serverTimestamp,
   getDocs,
+  setDoc,
   updateDoc,
   arrayUnion,
   doc,
@@ -29,12 +30,12 @@ function Chatroom({ user, room, onBack }) {
 
 
   const title = isPrivate
-    ? `Private Chat with ${room.name}`
+    ? `${room.name}`
     : `${room} Room`;
 
   
 
-  // 🔹 Load users
+  // Load users
   useEffect(() => {
     const fetchUsers = async () => {
       const snap = await getDocs(collection(db, "users"));
@@ -45,7 +46,7 @@ function Chatroom({ user, room, onBack }) {
     fetchUsers();
   }, []);
 
-  // 🔹 Listen for messages
+  // Listen for messages
   useEffect(() => {
     const q = query(
       collection(db, "chats", roomId, "messages"),
@@ -75,7 +76,7 @@ function Chatroom({ user, room, onBack }) {
     return () => unsubscribe();
   }, [roomId, user.uid]);
 
-  // 🔹 MARK MESSAGES AS READ
+  // MARK MESSAGES AS READ
   useEffect(() => {
     messages.forEach(async (msg) => {
       if (!msg.readBy || !msg.readBy.includes(user.uid)) {
@@ -99,7 +100,7 @@ function Chatroom({ user, room, onBack }) {
   }, [roomId, user, isPrivate]);
 
 
-  // 🔹 Send message
+  // Send message
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -107,8 +108,17 @@ function Chatroom({ user, room, onBack }) {
       text: input,
       senderId: user.uid,
       timestamp: serverTimestamp(),
-      readBy: [user.uid], // ✅ IMPORTANT
+      readBy: [user.uid],
     });
+    await setDoc(
+  doc(db, "chats", roomId),
+  {
+    lastMessage: input,
+    lastTimestamp: serverTimestamp(),
+    participants: [user.uid, room.userId],
+  },
+  { merge: true }
+);
 
     setInput("");
   };
