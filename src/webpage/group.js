@@ -78,7 +78,7 @@ function Groups({ onSelectRoom }) {
            No private chats yet
         </p>
         )}
-
+      <div style={styles.privateChatList}>
         {mutuals.map((u) => (
         <div
           key={u.id}
@@ -117,7 +117,7 @@ function Groups({ onSelectRoom }) {
           )}
           </div>
         ))}
-
+      </div>
         {/* <ul style={styles.list}>
           {privateChats.map((chat, index) => (
             <li key={index} style={styles.listItem}>
@@ -210,6 +210,11 @@ const styles = {
   listItem: {
     display: "flex",
     justifyContent: "center",
+  },
+  privateChatList: {
+  maxHeight: "240px",
+  overflowY: "auto",
+  scrollbarWidth: "thin",
   },
   button: {
     width: "100%",
