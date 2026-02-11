@@ -6,6 +6,9 @@ import SearchUsers from "../components/SearchUsers";
 import { chatMutualConnections } from "../functions/chatMutualConnection";
 import { auth } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
+// import { sanitizeMessage } from "../utils/sanitizeMessage";
+import { decryptMessage, getChatKey } from "../utils/encryption";
+
 
 function Groups({ onSelectRoom }) {
   const rooms = ["Notice", "Projects", "Random"];
@@ -14,6 +17,7 @@ function Groups({ onSelectRoom }) {
   const [hovered, setHovered] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const currentUser = auth.currentUser;
 
   useEffect(() => {
   const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -71,66 +75,55 @@ function Groups({ onSelectRoom }) {
         </ul>
 
         {/* Private Chats */}
-        <h3 style={styles.subHeading}>🔒 Private Chats</h3>
+        <h3 style={styles.subHeading}>Mutual Chats</h3>
 
-<div className="private-chat-scroll">
-  {mutuals.length === 0 && (
-    <p style={{ opacity: 0.6, textAlign: "center" }}>
-      No private chats yet
-    </p>
-  )}
+        <div className="private-chat-scroll">
+          {mutuals.length === 0 && (
+            <p style={{ opacity: 0.6, textAlign: "center" }}>
+              No private chats yet
+            </p>
+          )}
 
-  {mutuals.map((u) => (
-    <div
-      key={u.id}
-      style={styles.privateChatRow}
-      onClick={() =>
-        onSelectRoom({
-          type: "private",
-          userId: u.id,
-          name: u.username || u.email,
-        })
-      }
-    >
-      {/* LEFT */}
-      <div style={styles.privateLeft}>
-        <div style={styles.privateAvatar}>
-          {(u.username || u.email)?.charAt(0).toUpperCase()}
-        </div>
+          {mutuals.map((u) => (
+            <div
+              key={u.id}
+              style={styles.privateChatRow}
+              onClick={() =>
+                onSelectRoom({
+                  type: "private",
+                  userId: u.id,
+                  name: u.username || u.email,
+                })
+              }
+            >
+              {/* LEFT */}
+              <div style={styles.privateLeft}>
+                <div style={styles.privateAvatar}>
+                  {(u.username || u.email)?.charAt(0).toUpperCase()}
+                </div>
 
-        <div>
-          <div style={styles.privateName}>
-            {u.username || u.email}
-          </div>
-          <div style={styles.privateSub}>{u.lastMessage || "Tap to chat"}</div>
-        </div>
-      </div>
+                <div>
+                  <div style={styles.privateName}>
+                    {u.username || u.email}
+                  </div>
+                  <div style={styles.privateSub}>
+                    {u.lastMessage
+                      ? decryptMessage(
+                          u.lastMessage,
+                          getChatKey(currentUser.uid, u.id)
+                        ) || "🔒 Encrypted message"
+                      : "Tap to chat"}
+                  </div>
+                </div>
+              </div>
 
-      {/* RIGHT */}
-      {u.unreadCount > 0 && (
-        <div style={styles.unreadBadge}>{u.unreadCount}</div>
-      )}
-    </div>
-  ))}
-</div>
-
-        {/* <ul style={styles.list}>
-          {privateChats.map((chat, index) => (
-            <li key={index} style={styles.listItem}>
-              <button
-                style={{
-                  ...styles.button,
-                  ...(hovered === `chat-${index}` ? styles.buttonHover : {}),
-                }}
-                onMouseEnter={() => setHovered(`chat-${index}`)}
-                onMouseLeave={() => setHovered(null)}
-                onClick={() => onSelectRoom(chat)}
-              >
-                Chat with {chat}
-              </button>
-            </li>
+              {/* RIGHT */}
+              {u.unreadCount > 0 && (
+                <div style={styles.unreadBadge}>{u.unreadCount}</div>
+              )}
+            </div>
           ))}
-        </ul> */}
+        </div>
 
         {/* 🔍 Search Modal */}
         {showSearch && (
@@ -153,14 +146,14 @@ const styles = {
     justifyContent: "center",
     alignItems: "center",
     height: "100vh",
-    background: "linear-gradient(135deg, #667eea, #764ba2)",
+    background: "linear-gradient(135deg, #c6cde9, #d9cfe4)",
     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
   },
   container: {
     padding: "30px",
     width: "300px",
     height: "500px",
-    background: "linear-gradient(145deg, #667eea, #764ba2)",
+    background: "linear-gradient(145deg, #000104, #12091b)",
     borderRadius: "20px",
     boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
     color: "white",
