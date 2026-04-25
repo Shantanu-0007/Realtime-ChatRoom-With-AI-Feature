@@ -1,12 +1,36 @@
-// src/utils/aiToxicity.js
-// Later we can replace this with TensorFlow.js / ML model
+export const checkAIToxicity = async (text) => {
 
-import { isToxicMessage } from "./toxicityFilter";
+  try {
 
-export const detectToxicityAI = async (text) => {
-  // Simulate async AI call
-  return {
-    isToxic: isToxicMessage(text),
-    confidence: isToxicMessage(text) ? 0.85 : 0.05,
-  };
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/unitary/toxic-bert",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          //(better performance)
+          Authorization: "Bearer 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"
+        },
+        body: JSON.stringify({
+          inputs: text
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!Array.isArray(data)) return false;
+
+    const toxicLabel = data.find(
+      (item) => item.label === "toxic"
+    );
+
+    return toxicLabel && toxicLabel.score > 0.7;
+
+  } catch (error) {
+
+    console.error("AI toxicity error:", error);
+    return false;
+
+  }
 };
