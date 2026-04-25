@@ -17,6 +17,9 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { encryptMessage, decryptMessage, getChatKey } from "../utils/encryption";
+import { isToxicMessage, maskToxicWords } from "../utils/toxicityFilter";
+import { checkAIToxicity } from "../utils/aiToxicity";
+import { getAIResponse } from "../utils/aiChatbot";
 
 
 function Chatroom({ user, room, onBack }) {
@@ -163,37 +166,77 @@ function Chatroom({ user, room, onBack }) {
   }, [roomId, user.uid]);
 
   /* ---------------- SEND MESSAGE ---------------- */
-  const sendMessage = async () => {
+const sendMessage = async () => {
+
   if (!input.trim()) return;
 
-  const { cleanText, isToxic } = sanitizeMessage(input);
+  try {
 
-  const finalText = isPrivate
-    ? encryptMessage(cleanText, chatKey)
-    : cleanText;
+    // sanitize message
+    const { cleanText } = sanitizeMessage(input);
+    // DATASET TOXIC DETECTION
+  const datasetToxic = isToxicMessage(cleanText);
 
-  // STORE encrypted text
-  await addDoc(collection(db, "chats", roomId, "messages"), {
-    text: finalText,
-    senderId: user.uid,
-    timestamp: serverTimestamp(),
-    isToxic,
-    encrypted: isPrivate,
-    readBy: [user.uid],
-  });
+  // AI TOXIC DETECTION
+  const aiToxic = await checkAIToxicity(cleanText);
 
-  await setDoc(
-    doc(db, "chats", roomId),
-    {
-      lastMessage: finalText,
+    // detect toxicity using your toxicityFilter.js
+    const toxicDetected = datasetToxic || aiToxic;
+
+    // mask toxic words
+    const safeText = toxicDetected
+      ? maskToxicWords(cleanText)
+      : cleanText;
+
+    // encrypt if private chat
+    const finalText = isPrivate
+      ? encryptMessage(safeText, chatKey)
+      : safeText;
+
+    // store message
+    await addDoc(collection(db, "chats", roomId, "messages"), {
+      text: finalText,
+      senderId: user.uid,
+      timestamp: serverTimestamp(),
+      isToxic: toxicDetected,
       encrypted: isPrivate,
-      lastTimestamp: serverTimestamp(),
-      participants: isPrivate ? [user.uid, room.userId] : [],
-    },
-    { merge: true }
-  );
+      readBy: [user.uid],
+    });
 
-  setInput("");
+    // update last message
+    await setDoc(
+      doc(db, "chats", roomId),
+      {
+        lastMessage: finalText,
+        encrypted: isPrivate,
+        lastTimestamp: serverTimestamp(),
+        participants: isPrivate ? [user.uid, room.userId] : [],
+      },
+      { merge: true }
+    );
+    // AI BOT TRIGGER
+    if (cleanText.startsWith("@ai")) {
+
+      const prompt = cleanText.replace("@ai", "").trim();
+
+      const aiReply = await getAIResponse(prompt);
+
+      await addDoc(collection(db, "chats", roomId, "messages"), {
+        text: aiReply,
+        senderId: "AI_BOT",
+        timestamp: serverTimestamp(),
+        encrypted: false,
+        readBy: [],
+      });
+
+    }
+
+    setInput("");
+
+  } catch (error) {
+    console.error("Send message error:", error);
+  }
+
   };
 
 
@@ -241,8 +284,7 @@ function Chatroom({ user, room, onBack }) {
             const currentDate = formatDateLabel(msg.timestamp);
             const prevDate = index > 0 ? formatDateLabel(messages[index - 1].timestamp) : null;
             const showDate = currentDate !== prevDate;
-            const sender = usersMap[msg.senderId];
-
+            const sender = msg.senderId === "AI_BOT" ? { username: "AI Bot" } : usersMap[msg.senderId];
             return (
               <React.Fragment key={msg.id}>
                 {/*Date Separator*/}
