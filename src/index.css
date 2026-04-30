@@ -11,6 +11,7 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
 /*Private Chat Scrollbar*/
 .private-chat-scroll {
   max-height: 150px;
@@ -42,4 +43,7 @@ code {
 .private-chat-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.4) transparent;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
