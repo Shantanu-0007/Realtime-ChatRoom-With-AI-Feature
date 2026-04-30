@@ -1,40 +1,39 @@
 export const getAIResponse = async (prompt) => {
-
   try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.REACT_APP_GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant", // free model
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant in a chat app. Be concise and clear.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_tokens: 300,
+        temperature: 0.7,
+      }),
+    });
 
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/google/flan-t5-base",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer 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"
-        },
-        body: JSON.stringify({
-          inputs: prompt
-        })
-      }
-    );
+    if (!response.ok) {
+      const err = await response.json();
+      console.error("Groq error:", err);
+      return `⚠️ AI error: ${err.error?.message || "Unknown error"}`;
+    }
 
     const data = await response.json();
-
-    console.log("AI RAW RESPONSE:", data);
-
-    if (Array.isArray(data) && data.length > 0) {
-      return data[0].generated_text;
-    }
-
-    if (data.error) {
-      return "AI model is loading. Please try again.";
-    }
-
-    return "AI could not generate a response.";
+    return data.choices[0].message.content.trim();
 
   } catch (error) {
-
-    console.error("AI error:", error);
-    return "AI service unavailable.";
-
+    console.error("AI fetch error:", error);
+    return "🚫 Could not reach AI. Check your API key.";
   }
-
 };
