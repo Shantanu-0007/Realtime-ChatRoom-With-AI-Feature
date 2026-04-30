@@ -2,18 +2,12 @@ import React, { useEffect, useState } from "react";
 import { searchUsers } from "../functions/searchUsers";
 import { sendFollowRequest } from "../functions/sendFollowRequest";
 import { auth, db } from "../firebase";
-import { FaTimes, FaUserPlus, FaCheck } from "react-icons/fa";
+import { FaTimes, FaUserPlus, FaCheck, FaUserMinus } from "react-icons/fa";
 import { acceptFollow, rejectFollow } from "../functions/acceptFollow";
 import { unfollowUser } from "../functions/unfollowUser";
-import { FaUserMinus } from "react-icons/fa";
-
-
+import { sendNotification } from "../utils/fcmNotification"; // ✅ added
 import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  doc
+  collection, query, where, onSnapshot, doc
 } from "firebase/firestore";
 
 function SearchUsers({ onClose }) {
@@ -26,100 +20,115 @@ function SearchUsers({ onClose }) {
 
   const currentUser = auth.currentUser || null;
 
-  // 🔹 Load following list
+  // Load following list
   useEffect(() => {
-  if (!currentUser) return;
-
-  const unsubscribe = onSnapshot(
-    doc(db, "users", currentUser.uid),
-    (snap) => {
-      if (snap.exists()) {
-        setFollowing(snap.data().following || []);
-      } else {
-        setFollowing([]);
+    if (!currentUser) return;
+    const unsubscribe = onSnapshot(
+      doc(db, "users", currentUser.uid),
+      (snap) => {
+        if (snap.exists()) setFollowing(snap.data().following || []);
+        else setFollowing([]);
       }
-    }
-  );
-
-  return unsubscribe;
+    );
+    return unsubscribe;
   }, [currentUser]);
 
-
+  // Listen for outgoing requests
   useEffect(() => {
-  if (!currentUser) return;
-
-  const q = query(
-    collection(db, "followRequests"),
-    where("from", "==", currentUser.uid),
-    where("status", "==", "pending")
-  );
-
-  const unsubscribe = onSnapshot(q, (snap) => {
-    const map = {};
-    snap.forEach((d) => {
-      map[d.data().to] = true;
+    if (!currentUser) return;
+    const q = query(
+      collection(db, "followRequests"),
+      where("from", "==", currentUser.uid),
+      where("status", "==", "pending")
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const map = {};
+      snap.forEach((d) => { map[d.data().to] = true; });
+      setRequested(map);
     });
-    setRequested(map);
-  });
-
-  return unsubscribe;
+    return unsubscribe;
   }, [currentUser]);
 
-
-  // 🔹 Listen for incoming follow requests (REALTIME)
+  // Listen for incoming requests
   useEffect(() => {
-  if (!currentUser) return;
-
-  const q = query(
-    collection(db, "followRequests"),
-    where("to", "==", currentUser.uid),
-    where("status", "==", "pending")
-  );
-
-  const unsubscribe = onSnapshot(q, (snap) => {
-    const map = {};
-    snap.forEach((d) => {
-      map[d.data().from] = d.id;
+    if (!currentUser) return;
+    const q = query(
+      collection(db, "followRequests"),
+      where("to", "==", currentUser.uid),
+      where("status", "==", "pending")
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const map = {};
+      snap.forEach((d) => { map[d.data().from] = d.id; });
+      setIncomingRequests(map);
     });
-    setIncomingRequests(map);
-  });
-
-  return unsubscribe;
+    return unsubscribe;
   }, [currentUser]);
 
-
-  // 🔹 Load users initially
+  // Load users initially
   useEffect(() => {
-  if (!currentUser) return;
-
-  const loadUsers = async () => {
-    const users = await searchUsers("");
-    setResults(users.filter((u) => u.id !== currentUser.uid));
-    setHasSearched(true);
-  };
-
-  loadUsers();
+    if (!currentUser) return;
+    const loadUsers = async () => {
+      const users = await searchUsers("");
+      setResults(users.filter((u) => u.id !== currentUser.uid));
+      setHasSearched(true);
+    };
+    loadUsers();
   }, [currentUser]);
-
 
   const handleSearch = async () => {
-  if (!text.trim() || !currentUser) return;
-  setHasSearched(true);
-  const users = await searchUsers(text);
-  setResults(users.filter((u) => u.id !== currentUser.uid));
+    if (!text.trim() || !currentUser) return;
+    setHasSearched(true);
+    const users = await searchUsers(text);
+    setResults(users.filter((u) => u.id !== currentUser.uid));
   };
 
-  const handleFollow = async (id) => {
-  if (!currentUser) return;
-  await sendFollowRequest(id);
-  setRequested((prev) => ({ ...prev, [id]: true }));
+  // ✅ Send follow request + FCM notification
+  const handleFollow = async (targetUser) => {
+    if (!currentUser) return;
+    await sendFollowRequest(targetUser.id);
+    setRequested((prev) => ({ ...prev, [targetUser.id]: true }));
+
+    // Notify the target user
+    await sendNotification({
+      toUid: targetUser.id,
+      title: "👋 Friend Request",
+      body: `${currentUser.displayName || currentUser.email} sent you a friend request`,
+      data: { type: "friend_request", fromUid: currentUser.uid },
+    });
   };
 
+  // ✅ Accept follow + notify sender
+  const handleAccept = async (requestId, fromUser) => {
+    await acceptFollow(requestId, fromUser.id, currentUser.uid);
+    setFollowing((prev) => [...prev, fromUser.id]);
+    setIncomingRequests((prev) => {
+      const copy = { ...prev };
+      delete copy[fromUser.id];
+      return copy;
+    });
+
+    // Notify the person whose request was accepted
+    await sendNotification({
+      toUid: fromUser.id,
+      title: "✅ Friend Request Accepted",
+      body: `${currentUser.displayName || currentUser.email} accepted your friend request`,
+      data: { type: "friend_request_accepted", fromUid: currentUser.uid },
+    });
+  };
+
+  const handleReject = async (requestId, fromUserId) => {
+    await rejectFollow(requestId);
+    setIncomingRequests((prev) => {
+      const copy = { ...prev };
+      delete copy[fromUserId];
+      return copy;
+    });
+  };
 
   return (
     <>
       <div style={styles.backdrop} onClick={onClose} />
-
       <div style={styles.modal}>
         <div style={styles.header}>
           <h3>Find People</h3>
@@ -131,6 +140,7 @@ function SearchUsers({ onClose }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Search by username or email"
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
 
         <button style={styles.searchBtn} onClick={handleSearch}>
@@ -150,83 +160,52 @@ function SearchUsers({ onClose }) {
               <span>{u.username || u.email}</span>
             </div>
 
-            {/* ✅ Already connected */}
+            {/* Already connected */}
             {following.includes(u.id) ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <button style={styles.connected} disabled>
-              ✓ Connected
-            </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button style={styles.connected} disabled>✓ Connected</button>
+                <button
+                  style={styles.unfollow}
+                  onClick={async () => {
+                    await unfollowUser(u.id);
+                    setFollowing((prev) => prev.filter((id) => id !== u.id));
+                  }}
+                >
+                  <FaUserMinus />
+                </button>
+              </div>
 
-            <button
-            style={styles.unfollow}
-            onClick={async () => {
-             await unfollowUser(u.id);
-
-            setFollowing((prev) =>
-              prev.filter((id) => id !== u.id)
-            );
-           }}
-            >
-            <FaUserMinus />
-            </button>
-            </div>
-            ): incomingRequests[u.id] ? (
-              // ✅ Incoming request → Accept / Reject
+            ) : incomingRequests[u.id] ? (
+              // Incoming request → Accept / Reject
               <div style={{ display: "flex", gap: "6px" }}>
                 <button
                   style={{ ...styles.followBtn, background: "#22c55e" }}
-                  onClick={async () => {
-                    await acceptFollow(
-                      incomingRequests[u.id],
-                      u.id,
-                      currentUser.uid
-                    );
-
-                    setFollowing((prev) => [...prev, u.id]);
-
-                    setIncomingRequests((prev) => {
-                      const copy = { ...prev };
-                      delete copy[u.id];
-                      return copy;
-                    });
-                  }}
+                  onClick={() => handleAccept(incomingRequests[u.id], u)} // ✅ passes full user object
                 >
                   Accept
                 </button>
-
                 <button
                   style={{ ...styles.followBtn, background: "#ef4444" }}
-                  onClick={async () => {
-                    await rejectFollow(incomingRequests[u.id]);
-
-                    setIncomingRequests((prev) => {
-                      const copy = { ...prev };
-                      delete copy[u.id];
-                      return copy;
-                    });
-                  }}
+                  onClick={() => handleReject(incomingRequests[u.id], u.id)}
                 >
                   Reject
                 </button>
               </div>
+
             ) : (
-              // ✅ Normal follow / requested
+              // Send follow request
               <button
                 style={{
                   ...styles.followBtn,
                   ...(requested[u.id] ? styles.requested : {}),
                 }}
                 disabled={requested[u.id]}
-                onClick={() => handleFollow(u.id)}
+                onClick={() => handleFollow(u)} // ✅ passes full user object
               >
                 {requested[u.id] ? (
-                  <>
-                    <FaCheck /> Requested
-                  </>
+                  <><FaCheck /> Requested</>
                 ) : (
-                  <>
-                    <FaUserPlus /> Follow
-                  </>
+                  <><FaUserPlus /> Follow</>
                 )}
               </button>
             )}
@@ -237,98 +216,52 @@ function SearchUsers({ onClose }) {
   );
 }
 
-
 const styles = {
   backdrop: {
-    position: "fixed",
-    inset: 0,
+    position: "fixed", inset: 0,
     background: "rgba(0,0,0,0.6)",
-    backdropFilter: "blur(3px)",
-    zIndex: 10,
+    backdropFilter: "blur(3px)", zIndex: 10,
   },
   modal: {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
+    position: "fixed", top: "50%", left: "50%",
     transform: "translate(-50%, -50%)",
     background: "linear-gradient(145deg, #111, #1a1a1a)",
-    color: "white",
-    padding: "20px",
-    borderRadius: "16px",
-    width: "300px",
-    zIndex: 11,
+    color: "white", padding: "20px", borderRadius: "16px",
+    width: "300px", zIndex: 11,
     boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
   },
   header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "10px",
-  },
-  title: {
-    margin: 0,
-  },
-  closeIcon: {
-    cursor: "pointer",
-    fontSize: "18px",
-    opacity: 0.8,
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", marginBottom: "10px",
   },
   input: {
-  width: "100%",
-  padding: "12px 14px",
-  boxSizing: "border-box",
-  borderRadius: "12px",
-  border: "none",
-  outline: "none",
-  fontSize: "14px",
-  marginBottom: "12px",
+    width: "100%", padding: "12px 14px",
+    boxSizing: "border-box", borderRadius: "12px",
+    border: "none", outline: "none",
+    fontSize: "14px", marginBottom: "12px",
   },
   searchBtn: {
-    width: "100%",
-    padding: "10px",
-    borderRadius: "10px",
+    width: "100%", padding: "10px", borderRadius: "10px",
     border: "none",
     background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-    color: "white",
-    cursor: "pointer",
-    marginBottom: "10px",
+    color: "white", cursor: "pointer", marginBottom: "10px",
   },
-  empty: {
-    textAlign: "center",
-    opacity: 0.6,
-    fontSize: "14px",
-  },
+  empty: { textAlign: "center", opacity: 0.6, fontSize: "14px" },
   userRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "8px 0",
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", padding: "8px 0",
     borderBottom: "1px solid rgba(255,255,255,0.1)",
   },
-  userInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
+  userInfo: { display: "flex", alignItems: "center", gap: "8px" },
   avatar: {
-    width: "32px",
-    height: "32px",
-    borderRadius: "50%",
-    background: "#4f46e5",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: "bold",
+    width: "32px", height: "32px", borderRadius: "50%",
+    background: "#4f46e5", display: "flex",
+    alignItems: "center", justifyContent: "center", fontWeight: "bold",
   },
   followBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: "5px",
-    padding: "6px 10px",
-    borderRadius: "8px",
-    border: "none",
-    cursor: "pointer",
-    fontSize: "12px",
+    display: "flex", alignItems: "center", gap: "5px",
+    padding: "6px 10px", borderRadius: "8px",
+    border: "none", cursor: "pointer", fontSize: "12px",
     background: "linear-gradient(135deg, #22c55e, #16a34a)",
     color: "white",
   },
@@ -337,25 +270,15 @@ const styles = {
     cursor: "default",
   },
   connected: {
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  padding: "6px 10px",
-  borderRadius: "8px",
-  fontSize: "12px",
-  cursor: "default",
+    background: "#2563eb", color: "white", border: "none",
+    padding: "6px 10px", borderRadius: "8px",
+    fontSize: "12px", cursor: "default",
   },
-
   unfollow: {
-  background: "#ef4444",
-  color: "white",
-  border: "none",
-  padding: "6px",
-  borderRadius: "50%",
-  fontSize: "11px",
-  cursor: "pointer",
-},
-
+    background: "#ef4444", color: "white", border: "none",
+    padding: "6px", borderRadius: "50%",
+    fontSize: "11px", cursor: "pointer",
+  },
 };
 
 export default SearchUsers;
