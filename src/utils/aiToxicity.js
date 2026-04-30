@@ -1,36 +1,35 @@
 export const checkAIToxicity = async (text) => {
-
   try {
-
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/unitary/toxic-bert",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          //(better performance)
-          Authorization: "Bearer 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"
-        },
-        body: JSON.stringify({
-          inputs: text
-        })
-      }
-    );
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.REACT_APP_GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          {
+            role: "system",
+            content: `You are a toxicity detector. Reply with ONLY a JSON object like: {"toxic": true} or {"toxic": false}. A message is toxic if it contains hate speech, threats, insults, abuse, or profanity. No explanation, no extra text — only JSON.`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+        max_tokens: 10,
+        temperature: 0,
+      }),
+    });
 
     const data = await response.json();
-
-    if (!Array.isArray(data)) return false;
-
-    const toxicLabel = data.find(
-      (item) => item.label === "toxic"
-    );
-
-    return toxicLabel && toxicLabel.score > 0.7;
+    const raw = data.choices[0].message.content.trim();
+    const parsed = JSON.parse(raw);
+    return parsed.toxic === true;
 
   } catch (error) {
-
     console.error("AI toxicity error:", error);
     return false;
-
   }
 };
